@@ -31,7 +31,7 @@ Hybrid 的目标就是两者取长补短：
 
 - `scripts/checkpoint_hybrid.py`：基础 checkpoint 执行器（幂等 + 安全写入）
 - `scripts/context_extractor.py`：上下文智能提取（OpenClaw 优先 + fallback）
-- `scripts/run_checkpoint_pipeline.py`：将上下文转结构化记忆（checkpoint/decision/index/task）
+- `scripts/run_checkpoint_pipeline.py`：将上下文转结构化记忆（默认写 `.memory_hub/life/decisions/*.json` + index/task）
 - `scripts/checkpoint-memory-llm.sh`：每 6 小时自动触发流程层提取
 - `scripts/nightly_deep_analysis.py`：夜间分析 MEMORY 与决策日志，生成优化任务
 - `scripts/nightly-deep-analysis.sh`：夜间分析入口脚本
@@ -77,6 +77,7 @@ python3 scripts/checkpoint_hybrid.py --workspace ~/.openclaw/workspace
    - 每天夜间分析 `MEMORY.md` 与决策日志，自动回写优化任务到 `TASK_QUEUE.md`
 4. `TASK_QUEUE.md + 决策 JSON`
    - 把“记忆”转成可执行任务，形成决策→执行→反馈闭环
+   - 决策主格式对齐为 `life/decisions/dec_*.json`（标准 `.json` 后缀）
 
 ## 四、v2 加固点（重点）
 
@@ -133,6 +134,27 @@ python3 scripts/checkpoint_hybrid.py --workspace ~/.openclaw/workspace
 - 需要长期运行且降低“记忆文件失控增长”风险
 
 ---
+
+### 结构对齐与迁移（jsonl -> json）
+
+默认结构已对齐 memory-hub：
+
+```txt
+.memory_hub/
+├── MEMORY.md
+├── MEMORY_INDEX.md
+├── TASK_QUEUE.md
+├── life/
+│   ├── decisions/   # dec_*.json
+│   └── archives/
+└── memory/
+```
+
+如果你历史上已经写了 `memory/decisions.jsonl`，可执行：
+
+```bash
+python3 scripts/migrate_decisions_jsonl_to_json.py --workspace ~/.openclaw/workspace
+```
 
 ## 八、安全说明
 

@@ -66,11 +66,33 @@ python3 scripts/checkpoint_hybrid.py --workspace ~/.openclaw/workspace
   - extracts `achievements/learnings/decisions/issues/next_steps/task_feedback`
   - prefers OpenClaw Agent JSON extraction, with local fallback rules
 - `scripts/run_checkpoint_pipeline.py`
-  - transforms recent memory context into structured outputs (`checkpoints.jsonl`, `decisions.jsonl`, `MEMORY_INDEX.md`, `TASK_QUEUE.md`)
+  - transforms recent memory context into structured outputs (`.memory_hub/life/decisions/*.json`, `MEMORY_INDEX.md`, `TASK_QUEUE.md`)
+  - optional `--audit-jsonl` for append-only logs
 - `scripts/checkpoint-memory-llm.sh`
   - 6-hour checkpoint trigger entry
 - `scripts/nightly_deep_analysis.py` + `scripts/nightly-deep-analysis.sh`
   - nightly MEMORY/decsions analysis, auto-write optimization tasks to `TASK_QUEUE.md`
+
+### Memory-hub alignment
+
+Default process-layer output now aligns with memory-hub directory layout:
+
+```txt
+.workspace/.memory_hub/
+├── MEMORY.md
+├── MEMORY_INDEX.md
+├── TASK_QUEUE.md
+├── life/
+│   ├── decisions/       # dec_*.json (traceable per decision)
+│   └── archives/
+└── memory/              # raw daily logs and optional audit jsonl
+```
+
+Migration from old `memory/decisions.jsonl`:
+
+```bash
+python3 scripts/migrate_decisions_jsonl_to_json.py --workspace ~/.openclaw/workspace
+```
 
 ## Safety/Robustness (v2)
 
