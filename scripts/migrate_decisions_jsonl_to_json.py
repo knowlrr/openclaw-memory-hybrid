@@ -9,8 +9,11 @@ from pathlib import Path
 
 
 def safe_name(text: str, n: int = 36) -> str:
-    s = re.sub(r"[^\w\-\u4e00-\u9fff]+", "_", text.strip())
-    return s[:n].strip("_") or "decision"
+    # force ASCII-safe slug for cross-platform compatibility
+    raw = (text or "").strip().lower()
+    s = re.sub(r"[^a-z0-9\-]+", "_", raw)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s[:n] or "decision"
 
 
 def main():
