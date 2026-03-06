@@ -29,9 +29,11 @@ This project combines both:
   - Obsidian vault indexing
 
 [Hybrid Process Layer]
-  - checkpoint runner
+  - context extractor (LLM + fallback)
+  - checkpoint runner (6h)
   - decisions log (JSONL)
   - task feedback append
+  - nightly deep analysis -> TASK_QUEUE
   - memory index note (token-efficient context)
 ```
 
@@ -45,11 +47,30 @@ This project combines both:
 python3 scripts/checkpoint_hybrid.py --workspace ~/.openclaw/workspace
 ```
 
-4. Optional cron (every 6h):
+4. Optional cron:
 
 ```bash
+# base checkpoint (safe append + idempotency)
 0 */6 * * * /opt/homebrew/opt/python@3.10/bin/python3.10 /path/to/openclaw-memory-hybrid/scripts/checkpoint_hybrid.py --workspace /Users/you/.openclaw/workspace >> /Users/you/.openclaw/workspace/memory/hybrid-checkpoint.log 2>&1
+
+# process-layer checkpoint extraction (context -> structured memory)
+5 */6 * * * /bin/bash /path/to/openclaw-memory-hybrid/scripts/checkpoint-memory-llm.sh >> /Users/you/.openclaw/workspace/memory/hybrid-process.log 2>&1
+
+# nightly deep analysis (generate optimization tasks)
+30 2 * * * /bin/bash /path/to/openclaw-memory-hybrid/scripts/nightly-deep-analysis.sh >> /Users/you/.openclaw/workspace/memory/hybrid-nightly.log 2>&1
 ```
+
+## Process-layer Additions (from memory-hub strengths)
+
+- `scripts/context_extractor.py`
+  - extracts `achievements/learnings/decisions/issues/next_steps/task_feedback`
+  - prefers OpenClaw Agent JSON extraction, with local fallback rules
+- `scripts/run_checkpoint_pipeline.py`
+  - transforms recent memory context into structured outputs (`checkpoints.jsonl`, `decisions.jsonl`, `MEMORY_INDEX.md`, `TASK_QUEUE.md`)
+- `scripts/checkpoint-memory-llm.sh`
+  - 6-hour checkpoint trigger entry
+- `scripts/nightly_deep_analysis.py` + `scripts/nightly-deep-analysis.sh`
+  - nightly MEMORY/decsions analysis, auto-write optimization tasks to `TASK_QUEUE.md`
 
 ## Safety/Robustness (v2)
 

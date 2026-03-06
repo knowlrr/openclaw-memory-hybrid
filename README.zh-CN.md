@@ -29,7 +29,13 @@ Hybrid 的目标就是两者取长补短：
 
 ## 二、目录说明
 
-- `scripts/checkpoint_hybrid.py`：混合记忆 checkpoint 执行器
+- `scripts/checkpoint_hybrid.py`：基础 checkpoint 执行器（幂等 + 安全写入）
+- `scripts/context_extractor.py`：上下文智能提取（OpenClaw 优先 + fallback）
+- `scripts/run_checkpoint_pipeline.py`：将上下文转结构化记忆（checkpoint/decision/index/task）
+- `scripts/checkpoint-memory-llm.sh`：每 6 小时自动触发流程层提取
+- `scripts/nightly_deep_analysis.py`：夜间分析 MEMORY 与决策日志，生成优化任务
+- `scripts/nightly-deep-analysis.sh`：夜间分析入口脚本
+- `TASK_QUEUE.md`：任务闭环看板
 - `docs/qmd-config-template.jsonc`：QMD 配置模板
 
 运行后会写入：
@@ -45,13 +51,32 @@ Hybrid 的目标就是两者取长补短：
 python3 scripts/checkpoint_hybrid.py --workspace ~/.openclaw/workspace
 ```
 
-可选：每 6 小时执行一次
+可选：配置定时任务（推荐）
 
 ```bash
+# 基础 checkpoint
 0 */6 * * * /opt/homebrew/opt/python@3.10/bin/python3.10 /path/to/openclaw-memory-hybrid/scripts/checkpoint_hybrid.py --workspace /Users/you/.openclaw/workspace >> /Users/you/.openclaw/workspace/memory/hybrid-checkpoint.log 2>&1
+
+# 流程层 checkpoint 提取（上下文 -> 结构化记忆）
+5 */6 * * * /bin/bash /path/to/openclaw-memory-hybrid/scripts/checkpoint-memory-llm.sh >> /Users/you/.openclaw/workspace/memory/hybrid-process.log 2>&1
+
+# 夜间深度分析（写入 TASK_QUEUE）
+30 2 * * * /bin/bash /path/to/openclaw-memory-hybrid/scripts/nightly-deep-analysis.sh >> /Users/you/.openclaw/workspace/memory/hybrid-nightly.log 2>&1
 ```
 
 ---
+
+## 三点五、流程层闭环能力（吸收 memory-hub 优点）
+
+1. `context_extractor.py`
+   - 从当前对话上下文提取：成就 / 收获 / 决策 / 问题 / 下一步 / task feedback
+   - OpenClaw 抽取失败自动 fallback，不会中断
+2. `checkpoint-memory-llm.sh`
+   - 每 6 小时触发结构化提取，把原始日志写入 `checkpoints.jsonl`、`decisions.jsonl`、`MEMORY_INDEX.md`
+3. `nightly-deep-analysis.sh`
+   - 每天夜间分析 `MEMORY.md` 与决策日志，自动回写优化任务到 `TASK_QUEUE.md`
+4. `TASK_QUEUE.md + 决策 JSON`
+   - 把“记忆”转成可执行任务，形成决策→执行→反馈闭环
 
 ## 四、v2 加固点（重点）
 
