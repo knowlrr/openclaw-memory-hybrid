@@ -64,6 +64,10 @@ python3 scripts/checkpoint_hybrid.py --workspace ~/.openclaw/workspace
 - No direct mutation of vector internals
 - No bypass of QMD/update scope policies
 
+## Security
+
+See [`SECURITY.md`](./SECURITY.md) for threat model and hardening checklist.
+
 ## License
 
 MIT

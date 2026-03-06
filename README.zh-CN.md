@@ -106,3 +106,9 @@ python3 scripts/checkpoint_hybrid.py --workspace ~/.openclaw/workspace
 - 希望保留 OpenClaw 原生记忆生态
 - 同时希望有可审计、可自动化、可维护的记忆流程层
 - 需要长期运行且降低“记忆文件失控增长”风险
+
+---
+
+## 八、安全说明
+
+完整安全策略与巡检清单见：[`SECURITY.md`](./SECURITY.md)
