@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -22,12 +23,28 @@ def safe_name(text: str, n: int = 36) -> str:
     return s[:n].strip("_") or "decision"
 
 
+def load_state(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return {}
+
+
+def save_state(path: Path, state: dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.chmod(path, 0o600)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--workspace", required=True)
     ap.add_argument("--input-file")
     ap.add_argument("--max-lines", type=int, default=250)
-    ap.add_argument("--audit-jsonl", action="store_true", help="also append decisions/checkpoints jsonl logs")
+    ap.add_argument("--window", choices=["hour", "day"], default="hour")
+    ap.add_argument("--audit-jsonl", action="store_true", help="append-only audit logs")
     args = ap.parse_args()
 
     ws = Path(args.workspace).expanduser().resolve()
@@ -36,6 +53,7 @@ def main():
     life_dir = hub / "life"
     decisions_dir = life_dir / "decisions"
     archives_dir = life_dir / "archives"
+    state_file = hub / "state.json"
 
     for d in (hub, raw_memory_dir, life_dir, decisions_dir, archives_dir):
         d.mkdir(parents=True, exist_ok=True)
@@ -57,8 +75,19 @@ def main():
         task_queue.write_text("# TASK_QUEUE\n\n> 由 checkpoint 与 nightly analysis 自动维护\n\n", encoding="utf-8")
         os.chmod(task_queue, 0o600)
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    daily = Path(args.input_file).expanduser() if args.input_file else raw_memory_dir / f"{today}.md"
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    hour = now.strftime("%H")
+    window_key = f"checkpoint:{today}:{hour}" if args.window == "hour" else f"checkpoint:{today}"
+
+    state = load_state(state_file)
+    if state.get("last_checkpoint_window") == window_key:
+        print("skipped (idempotent)")
+        return
+
+    # v4 unified source: workspace/memory/YYYY-MM-DD.md
+    default_daily = ws / "memory" / f"{today}.md"
+    daily = Path(args.input_file).expanduser() if args.input_file else default_daily
     if daily.exists():
         lines = daily.read_text(encoding="utf-8", errors="replace").splitlines()
         context = "\n".join(lines[-args.max_lines :])
@@ -69,8 +98,7 @@ def main():
     ts = result["timestamp"]
     extracted = result.get("extracted") or {}
 
-    # write per-decision JSON files (memory-hub aligned)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = now.strftime("%Y%m%d_%H%M%S")
     for i, item in enumerate(extracted.get("decisions", [])[:20], start=1):
         row = {
             "ts": ts,
@@ -87,25 +115,45 @@ def main():
 
     if args.audit_jsonl:
         checkpoints = raw_memory_dir / "checkpoints.jsonl"
-        append(checkpoints, json.dumps(result, ensure_ascii=False) + "\n")
+        audit = dict(result)
+        audit["idempotency_key"] = window_key
+        append(checkpoints, json.dumps(audit, ensure_ascii=False) + "\n")
         os.chmod(checkpoints, 0o600)
 
-        decisions_jsonl = raw_memory_dir / "decisions.jsonl"
-        for item in extracted.get("decisions", [])[:20]:
-            row = {"ts": ts, "type": "decision", "decision": item, "source": result.get("source", "unknown")}
-            append(decisions_jsonl, json.dumps(row, ensure_ascii=False) + "\n")
-        if decisions_jsonl.exists():
-            os.chmod(decisions_jsonl, 0o600)
-
     summary_keys = ["achievements", "decisions", "issues", "next_steps"]
+    seen_hashes = set(state.get("index_hashes", []))
+    new_hashes = []
     for k in summary_keys:
         for item in extracted.get(k, [])[:3]:
-            append(index_path, f"- [{today}] {k}: {str(item)[:180]}\n")
+            line = f"- [{today}] {k}: {str(item)[:180]}"
+            h = hashlib.sha1(line.encode("utf-8")).hexdigest()
+            if h in seen_hashes:
+                continue
+            append(index_path, line + "\n")
+            new_hashes.append(h)
 
-    if extracted.get("next_steps"):
+    existing_task_hashes = set(state.get("task_hashes", []))
+    task_lines = []
+    for task in extracted.get("next_steps", [])[:10]:
+        t = str(task).strip()
+        if not t:
+            continue
+        h = hashlib.sha1(t.encode("utf-8")).hexdigest()
+        if h in existing_task_hashes:
+            continue
+        task_lines.append(t)
+        existing_task_hashes.add(h)
+
+    if task_lines:
         append(task_queue, f"\n## {today} checkpoint\n")
-        for task in extracted["next_steps"][:10]:
-            append(task_queue, f"- [ ] {task}\n")
+        for t in task_lines:
+            append(task_queue, f"- [ ] {t}\n")
+
+    state["last_checkpoint_window"] = window_key
+    state["last_checkpoint_ts"] = ts
+    state["index_hashes"] = (list(seen_hashes) + new_hashes)[-500:]
+    state["task_hashes"] = list(existing_task_hashes)[-1000:]
+    save_state(state_file, state)
 
     print("ok")
 

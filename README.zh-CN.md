@@ -66,6 +66,14 @@ python3 scripts/checkpoint_hybrid.py --workspace ~/.openclaw/workspace
 
 ---
 
+## 三、v4 收敛架构（单入口）
+
+- checkpoint 唯一入口：`scripts/run_checkpoint_pipeline.py`
+- 输入统一：`workspace/memory/YYYY-MM-DD.md`
+- 输出统一：`.memory_hub/*`
+- 幂等/去重状态：`.memory_hub/state.json`
+- `checkpoint_hybrid.py` 仅保留兼容壳，内部委托到 v4 pipeline
+
 ## 三点五、流程层闭环能力（吸收 memory-hub 优点）
 
 1. `context_extractor.py`

@@ -60,6 +60,14 @@ python3 scripts/checkpoint_hybrid.py --workspace ~/.openclaw/workspace
 30 2 * * * /bin/bash /path/to/openclaw-memory-hybrid/scripts/nightly-deep-analysis.sh >> /Users/you/.openclaw/workspace/memory/hybrid-nightly.log 2>&1
 ```
 
+## v4 Converged Architecture (single pipeline)
+
+- Single checkpoint entry: `scripts/run_checkpoint_pipeline.py`
+- Unified input source: `workspace/memory/YYYY-MM-DD.md`
+- Unified output root: `.memory_hub/*`
+- Idempotency + state dedupe: `.memory_hub/state.json`
+- `checkpoint_hybrid.py` is now a compatibility wrapper delegating to v4 pipeline
+
 ## Process-layer Additions (from memory-hub strengths)
 
 - `scripts/context_extractor.py`
