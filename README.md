@@ -1,5 +1,7 @@
 # OpenClaw Memory Hybrid
 
+中文说明见：[`README.zh-CN.md`](./README.zh-CN.md)
+
 Hybrid memory architecture for OpenClaw:
 
 - **Base layer**: OpenClaw native memory (`memory-core` + `QMD` backend)
@@ -48,6 +50,13 @@ python3 scripts/checkpoint_hybrid.py --workspace ~/.openclaw/workspace
 ```bash
 0 */6 * * * /opt/homebrew/opt/python@3.10/bin/python3.10 /path/to/openclaw-memory-hybrid/scripts/checkpoint_hybrid.py --workspace /Users/you/.openclaw/workspace >> /Users/you/.openclaw/workspace/memory/hybrid-checkpoint.log 2>&1
 ```
+
+## Safety/Robustness (v2)
+
+- Idempotency window (`--window hour|day`, default `hour`) prevents duplicate checkpoint writes in the same window.
+- Appends are lock-protected (`flock`) and `fsync` flushed for safer concurrent runs.
+- Checkpoints no longer append into `MEMORY.md` directly (reduces long-term memory pollution).
+- Memory file permissions default to restricted mode (`600`, memory dir `700`).
 
 ## Non-goals
 

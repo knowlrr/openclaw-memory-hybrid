@@ -1,51 +1,98 @@
 #!/usr/bin/env python3
-import argparse, json
+import argparse
+import json
+import os
 from datetime import datetime
 from pathlib import Path
 
+try:
+    import fcntl
+except Exception:  # pragma: no cover
+    fcntl = None
 
-def ensure(p: Path, text: str):
-    if not p.exists():
-        p.write_text(text, encoding='utf-8')
+
+def ensure_file(path: Path, init_text: str, mode: int = 0o600):
+    if not path.exists():
+        path.write_text(init_text, encoding="utf-8")
+        os.chmod(path, mode)
+
+
+def append_line_locked(path: Path, line: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+", encoding="utf-8") as f:
+        if fcntl is not None:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        f.write(line)
+        f.flush()
+        os.fsync(f.fileno())
+        if fcntl is not None:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
+def has_idempotency_key(path: Path, key: str) -> bool:
+    if not path.exists():
+        return False
+    marker = f'"idempotency_key": "{key}"'
+    with path.open("r", encoding="utf-8") as f:
+        for row in f:
+            if marker in row:
+                return True
+    return False
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--workspace', required=True)
+    ap = argparse.ArgumentParser(description="Run a safe hybrid memory checkpoint")
+    ap.add_argument("--workspace", required=True)
+    ap.add_argument(
+        "--window",
+        choices=["hour", "day"],
+        default="hour",
+        help="Idempotency window for checkpoint writes",
+    )
     args = ap.parse_args()
 
-    ws = Path(args.workspace).expanduser()
-    mem = ws / 'MEMORY.md'
-    daily = ws / 'memory' / f"{datetime.now().strftime('%Y-%m-%d')}.md"
-    decisions = ws / 'memory' / 'decisions.jsonl'
-    index = ws / 'memory' / 'MEMORY_INDEX.md'
+    ws = Path(args.workspace).expanduser().resolve()
+    memory_dir = ws / "memory"
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(memory_dir, 0o700)
 
-    daily.parent.mkdir(parents=True, exist_ok=True)
-    ensure(mem, '# MEMORY.md\n\n')
-    ensure(index, '# MEMORY_INDEX\n\n')
+    now = datetime.now()
+    ts = now.strftime("%Y-%m-%d %H:%M:%S")
+    day = now.strftime("%Y-%m-%d")
+    hour = now.strftime("%H")
 
-    ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    checkpoint = f"\n## Hybrid Checkpoint {ts}\n- status: ok\n- source: daily memory\n"
-    mem.write_text(mem.read_text(encoding='utf-8') + checkpoint, encoding='utf-8')
+    daily = memory_dir / f"{day}.md"
+    decisions = memory_dir / "decisions.jsonl"
+    index = memory_dir / "MEMORY_INDEX.md"
 
-    event = {
-        'ts': ts,
-        'type': 'checkpoint',
-        'note': 'hybrid memory checkpoint executed'
-    }
-    with decisions.open('a', encoding='utf-8') as f:
-        f.write(json.dumps(event, ensure_ascii=False) + '\n')
+    ensure_file(index, "# MEMORY_INDEX\n\n", mode=0o600)
+    ensure_file(decisions, "", mode=0o600)
 
-    idx_line = f"- [{datetime.now().strftime('%Y-%m-%d')}] checkpoint executed"
-    index.write_text(index.read_text(encoding='utf-8') + idx_line + '\n', encoding='utf-8')
+    idem_key = f"checkpoint:{day}:{hour}" if args.window == "hour" else f"checkpoint:{day}"
+
+    if has_idempotency_key(decisions, idem_key):
+        print("skipped (idempotent)")
+        return
 
     if daily.exists():
-        daily.write_text(daily.read_text(encoding='utf-8') + f"\n\n[hybrid] checkpoint at {ts}\n", encoding='utf-8')
+        append_line_locked(daily, f"\n[hybrid] checkpoint at {ts}\n")
     else:
-        daily.write_text(f"# Memory Log - {datetime.now().strftime('%Y-%m-%d')}\n\n[hybrid] checkpoint at {ts}\n", encoding='utf-8')
+        daily.write_text(f"# Memory Log - {day}\n\n[hybrid] checkpoint at {ts}\n", encoding="utf-8")
+        os.chmod(daily, 0o600)
 
-    print('ok')
+    event = {
+        "ts": ts,
+        "type": "checkpoint",
+        "status": "ok",
+        "source": "daily memory",
+        "idempotency_key": idem_key,
+        "version": "v2",
+    }
+    append_line_locked(decisions, json.dumps(event, ensure_ascii=False) + "\n")
+    append_line_locked(index, f"- [{day}] checkpoint executed ({hour}:00 window)\n")
+
+    print("ok")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
